@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "音声薬歴ツール",
+  "version": "3.5.0",
+  "description": "音声録音→文字起こし→SOAP分類→Musubi貼り付け",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "https://medication.musubi.app/*",
+    "https://lrtcrczgwxilukltetxa.supabase.co/*",
+    "https://api.groq.com/*",
+    "https://voice-yakureki.vercel.app/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://medication.musubi.app/*"],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
