@@ -1,8 +1,8 @@
 // voice-yakureki v5.8.0 supabase.js
 import { createClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL = 'https://lrtcrczgwxilukltetxa.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxydGNyY3pnd3hpbHVrbHRldHhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNjY5NDMsImV4cCI6MjA4OTc0Mjk0M30.zVRuzvAKQrNVbrHkQzdnhMqie7Dy4Py8Fcr5eEZAbQo'
+const SUPABASE_URL = 'https://swtbtkgeadeeppplerur.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3dGJ0a2dlYWRlZXBwcGxlcnVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0MDY3NjgsImV4cCI6MjA4OTk4Mjc2OH0.hRT7sQMF3W0f-siKg4iykwsoo_GwqZGYtSVALsXgqBU'
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 export { SUPABASE_URL, SUPABASE_ANON_KEY }
@@ -36,7 +36,6 @@ export async function getUserInfo(email) {
 }
 
 // === API Keys ===
-// SQL: get_api_key(p_service TEXT, p_store_id UUID DEFAULT NULL)
 export async function getApiKey(service, storeId) {
   try {
     const { data, error } = await supabase.rpc('get_api_key', {
@@ -44,7 +43,6 @@ export async function getApiKey(service, storeId) {
       p_store_id: storeId || null,
     })
     if (!error && data) return data
-    console.warn('getApiKey rpc fallback:', error?.message)
     if (storeId) {
       const { data: d } = await supabase
         .from('api_keys').select('api_key')
@@ -98,7 +96,7 @@ export async function logUsage(action, storeId, userId, durationSec) {
     await supabase.from('usage_logs').insert({
       action, store_id: storeId || null, user_id: userId || null, duration_sec: durationSec || null,
     })
-  } catch (e) { /* ログ失敗は無視 */ }
+  } catch (e) {}
 }
 
 // === Drug Master ===
@@ -118,7 +116,6 @@ export async function loadDrugMaster() {
     drugCacheTime = Date.now()
     return drugCache
   } catch (e) {
-    console.warn('Drug master load failed:', e.message)
     return []
   }
 }
