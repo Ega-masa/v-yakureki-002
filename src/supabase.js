@@ -1,4 +1,4 @@
-// voice-yakureki v5.7.0 supabase.js
+// voice-yakureki v5.8.0 supabase.js
 import { createClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = 'https://lrtcrczgwxilukltetxa.supabase.co'
@@ -28,27 +28,35 @@ export function onAuthChange(callback) {
 // === User ===
 export async function getUserInfo(email) {
   const { data } = await supabase
-    .from('users').select('*, user_stores(store_id, role, stores(id, name, name_kana))').eq('email', email).single()
+    .from('users')
+    .select('*, user_stores(store_id, role, stores(id, name, name_kana, company_id))')
+    .eq('email', email)
+    .maybeSingle()
   return data
 }
 
-// === API Keys (DB関数経由で安全に取得) ===
+// === API Keys ===
+// SQL: get_api_key(p_service TEXT, p_store_id UUID DEFAULT NULL)
 export async function getApiKey(service, storeId) {
   try {
     const { data, error } = await supabase.rpc('get_api_key', {
       p_service: service,
       p_store_id: storeId || null,
     })
-    if (error) {
-      console.warn('getApiKey rpc error, falling back:', error.message)
-      if (storeId) {
-        const { data: d } = await supabase.from('api_keys').select('api_key').eq('service', service).eq('store_id', storeId).eq('is_active', true).single()
-        if (d?.api_key) return d.api_key
-      }
-      const { data: d2 } = await supabase.from('api_keys').select('api_key').eq('service', service).is('store_id', null).eq('is_active', true).single()
-      return d2?.api_key || ''
+    if (!error && data) return data
+    console.warn('getApiKey rpc fallback:', error?.message)
+    if (storeId) {
+      const { data: d } = await supabase
+        .from('api_keys').select('api_key')
+        .eq('service', service).eq('store_id', storeId).eq('is_active', true)
+        .maybeSingle()
+      if (d?.api_key) return d.api_key
     }
-    return data || ''
+    const { data: d2 } = await supabase
+      .from('api_keys').select('api_key')
+      .eq('service', service).is('store_id', null).eq('is_active', true)
+      .limit(1).maybeSingle()
+    return d2?.api_key || ''
   } catch (e) {
     console.error('getApiKey error:', e)
     return ''
@@ -57,13 +65,14 @@ export async function getApiKey(service, storeId) {
 
 // === Records ===
 export async function saveRecord(transcript, durationSec, patientName, storeId, userId) {
-  const row = { transcript, duration_sec: durationSec, patient_name: patientName || '' }
+  const row = { transcript, duration_sec: durationSec || 0, patient_name: patientName || '' }
   if (storeId) row.store_id = storeId
   if (userId) row.created_by = userId
   const { data, error } = await supabase.from('records').insert(row).select().single()
   if (error) throw error
   return data
 }
+
 export async function getRecords(limit = 30, storeId) {
   let q = supabase.from('records').select('*').order('created_at', { ascending: false }).limit(limit)
   if (storeId) q = q.eq('store_id', storeId)
@@ -71,11 +80,13 @@ export async function getRecords(limit = 30, storeId) {
   if (error) throw error
   return data || []
 }
+
 export async function updateRecord(id, updates) {
   const { data, error } = await supabase.from('records').update(updates).eq('id', id).select().single()
   if (error) throw error
   return data
 }
+
 export async function deleteRecord(id) {
   const { error } = await supabase.from('records').delete().eq('id', id)
   if (error) throw error
@@ -84,8 +95,10 @@ export async function deleteRecord(id) {
 // === Usage Log ===
 export async function logUsage(action, storeId, userId, durationSec) {
   try {
-    await supabase.from('usage_logs').insert({ action, store_id: storeId || null, user_id: userId || null, duration_sec: durationSec || null })
-  } catch (e) {}
+    await supabase.from('usage_logs').insert({
+      action, store_id: storeId || null, user_id: userId || null, duration_sec: durationSec || null,
+    })
+  } catch (e) { /* ログ失敗は無視 */ }
 }
 
 // === Drug Master ===
@@ -95,10 +108,19 @@ const DRUG_CACHE_TTL = 30 * 60 * 1000
 
 export async function loadDrugMaster() {
   if (drugCache && Date.now() - drugCacheTime < DRUG_CACHE_TTL) return drugCache
-  const { data } = await supabase.from('drug_master').select('ingredient_name, reading_kana, reading_kata, aliases').eq('is_active', true)
-  drugCache = data || []
-  drugCacheTime = Date.now()
-  return drugCache
+  try {
+    const { data, error } = await supabase
+      .from('drug_master')
+      .select('ingredient_name, reading_kana, reading_kata, aliases')
+      .eq('is_active', true)
+    if (error) throw error
+    drugCache = data || []
+    drugCacheTime = Date.now()
+    return drugCache
+  } catch (e) {
+    console.warn('Drug master load failed:', e.message)
+    return []
+  }
 }
 
 export function correctDrugNames(text, drugs) {
@@ -109,8 +131,8 @@ export function correctDrugNames(text, drugs) {
   const toHira = (s) => s.replace(/[\u30A1-\u30F6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60))
   for (const drug of drugs) {
     const name = drug.ingredient_name
-    if (result.includes(name)) continue
-    const candidates = [drug.reading_kana, drug.reading_kata, toKata(drug.reading_kana), toHira(drug.reading_kata || ''), ...(drug.aliases || [])].filter(Boolean)
+    if (!name || result.includes(name)) continue
+    const candidates = [drug.reading_kana, drug.reading_kata, toKata(drug.reading_kana || ''), toHira(drug.reading_kata || ''), ...(drug.aliases || [])].filter(Boolean)
     for (const alias of candidates) {
       if (!alias || alias === name) continue
       if (result.includes(alias)) { result = result.split(alias).join(name); corrections.push({ from: alias, to: name }); break }
@@ -120,4 +142,3 @@ export function correctDrugNames(text, drugs) {
 }
 
 export function invalidateDrugCache() { drugCache = null; drugCacheTime = 0 }
-
