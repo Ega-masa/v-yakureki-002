@@ -1,42 +1,19 @@
 // voice-yakureki v5.8.0 api/soap.js
-import { createClient } from '@supabase/supabase-js'
-
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://swtbtkgeadeeppplerur.supabase.co';
-const SUPABASE_ANON = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3dGJ0a2dlYWRlZXBwcGxlcnVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0MDY3NjgsImV4cCI6MjA4OTk4Mjc2OH0.hRT7sQMF3W0f-siKg4iykwsoo_GwqZGYtSVALsXgqBU';
-
-function setCors(req, res) {
+export default async function handler(req, res) {
+  // CORS
   const origin = req.headers?.origin || '*';
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-}
 
-async function verifyAuth(req) {
-  const authHeader = req.headers?.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-  const token = authHeader.slice(7);
-  try {
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
-    const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data?.user) return null;
-    return data.user;
-  } catch { return null; }
-}
-
-export default async function handler(req, res) {
-  setCors(req, res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method === 'GET') {
     return res.status(200).json({
       status: 'ok', version: '5.8.0',
       anthropic_key_set: !!process.env.ANTHROPIC_API_KEY,
-      supabase_url: SUPABASE_URL.replace('https://', '').split('.')[0],
     });
   }
-  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-
-  const user = await verifyAuth(req);
-  if (!user) return res.status(401).json({ error: 'Unauthorized: valid session required' });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
