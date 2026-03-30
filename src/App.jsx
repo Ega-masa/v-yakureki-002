@@ -1,13 +1,12 @@
-// voice-yakureki v5.5.0 App.jsx — 全機能統合版 + テンプレート/チェック連携
+// voice-yakureki v5.8.0 App.jsx — 全機能統合版（修正版）
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Mic, Square, Loader2, X, RotateCcw, Upload, FileAudio, List, ArrowLeft, Trash2, Clock, Check, Sparkles, ChevronDown, LogOut, User, Shield, Building2, Download, Search } from "lucide-react";
+import { Mic, Square, Loader2, X, RotateCcw, Upload, FileAudio, List, ArrowLeft, Trash2, Clock, Check, Sparkles, ChevronDown, LogOut, User, Shield, Building2, Download, Search, AlertTriangle } from "lucide-react";
 import { saveRecord, getRecords, updateRecord, deleteRecord, signIn, signOut, getSession, onAuthChange, supabase, getUserInfo, getApiKey, logUsage, loadDrugMaster, correctDrugNames } from "./supabase";
 import Admin from "./Admin.jsx";
 
-const APP_VERSION = "5.7.1";
+const APP_VERSION = "5.8.0";
 const ST = { IDLE:"idle", REC:"rec", PROCESSING:"processing" };
 const ACCEPT = ".mp3,.wav,.webm,.ogg,.m4a,.aac,.flac,.mp4,.mpeg,.mpga";
-const STORE_KEY = "vy-last-store-id";
 
 const SOAP_KEYS = [
   { key:"soap_s", apiKey:"S", label:"S", shortcut:"##S##", full:"主観的情報", color:"#059669" },
@@ -36,14 +35,13 @@ async function transcribeAudio(w,k){const f=new FormData();f.append("file",w,"re
 async function classifySOAP(transcript,sessionToken){const headers={"Content-Type":"application/json"};if(sessionToken)headers["Authorization"]=`Bearer ${sessionToken}`;const r=await fetch("/api/soap",{method:"POST",headers,body:JSON.stringify({transcript})});const d=await r.json();if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);return d.soap;}
 
 // ======================================
-// ログイン画面（会社コード + メール + PW）
-// ★ IME安定化: toUpperCaseは送信時のみ実行
+// ログイン画面
 // ======================================
 function LoginScreen({onLogin}){
   const[loginId,setLoginId]=useState(()=>{try{return localStorage.getItem("vy-login-id")||"";}catch{return"";}});
   const[pass,setPass]=useState("");
   const[loading,setLoading]=useState(false);const[err,setErr]=useState("");
-  const[helpMode,setHelpMode]=useState(null);const[helpEmail,setHelpEmail]=useState("");const[helpLoading,setHelpLoading]=useState(false);const[helpResult,setHelpResult]=useState("");
+  const[helpMode,setHelpMode]=useState(null);
 
   const handle=async()=>{
     const id=loginId.trim().toUpperCase();
@@ -51,7 +49,6 @@ function LoginScreen({onLogin}){
     if(!pass){setErr("パスワードを入力してください");return;}
     setLoading(true);setErr("");
     try{
-      // 内部ダミーメールに変換してSupabase Auth認証
       const email=`${id.toLowerCase()}@vy.internal`;
       await signIn(email,pass);
       try{localStorage.setItem("vy-login-id",id);}catch{}
@@ -65,28 +62,6 @@ function LoginScreen({onLogin}){
       }
     }
     setLoading(false);
-  };
-
-  const handleFindCode=async()=>{
-    setHelpLoading(true);setHelpResult("");
-    try{
-      const r=await fetch("/api/admin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"find_company_by_email",email:helpEmail.trim()})});
-      const d=await r.json();
-      if(!r.ok)throw new Error(d.error);
-      setHelpResult(`✅ 会社: ${d.company_name}\n会社コード: ${d.masked_code}\n管理者にお問い合わせください`);
-    }catch(e){setHelpResult("❌ "+e.message);}
-    setHelpLoading(false);
-  };
-
-  const handleRequestReset=async()=>{
-    setHelpLoading(true);setHelpResult("");
-    try{
-      const r=await fetch("/api/admin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"request_password_reset",email:helpEmail.trim()})});
-      const d=await r.json();
-      if(!r.ok)throw new Error(d.error);
-      setHelpResult("✅ 管理者にパスワードリセットを依頼しました。");
-    }catch(e){setHelpResult("❌ "+e.message);}
-    setHelpLoading(false);
   };
 
   const IS={width:"100%",padding:"10px 12px",border:"2px solid #e2e8f0",borderRadius:10,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8};
@@ -116,11 +91,11 @@ function LoginScreen({onLogin}){
       </div>
       {helpMode==="id"&&<div style={{marginTop:10,padding:"12px 14px",background:"#f0f9ff",borderRadius:10,border:"1px solid #bfdbfe"}}>
         <div style={{fontSize:12,fontWeight:700,color:"#1e40af",marginBottom:6}}>店舗IDを検索</div>
-        <div style={{fontSize:10,color:"#64748b",marginBottom:8}}>管理者に発行された店舗IDをご確認ください。店舗IDは管理画面の店舗一覧に表示されています。</div>
+        <div style={{fontSize:10,color:"#64748b"}}>管理者に発行された店舗IDをご確認ください。管理画面の店舗一覧に表示されています。</div>
       </div>}
       {helpMode==="pass"&&<div style={{marginTop:10,padding:"12px 14px",background:"#fef3c7",borderRadius:10,border:"1px solid #fde68a"}}>
         <div style={{fontSize:12,fontWeight:700,color:"#92400e",marginBottom:6}}>パスワードリセット</div>
-        <div style={{fontSize:10,color:"#64748b",marginBottom:8}}>管理者にお問い合わせください。管理画面からパスワードのリセットが可能です。</div>
+        <div style={{fontSize:10,color:"#64748b"}}>管理者にお問い合わせください。管理画面からパスワードのリセットが可能です。</div>
       </div>}
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
@@ -131,7 +106,7 @@ function LoginScreen({onLogin}){
 // 小コンポーネント
 // ======================================
 function Wave({active,level}){return(<div style={{display:"flex",alignItems:"center",gap:2,height:48,justifyContent:"center"}}>{Array.from({length:36}).map((_,i)=>{const h=active?8+(level||.3)*40+Math.sin(Date.now()/200+i)*8:4;return<div key={i} style={{width:2.5,borderRadius:2,background:active?`hsl(${165+i*2},60%,${40+Math.sin(i*.4)*12}%)`:"#d1d5db",height:`${Math.max(4,h)}px`,transition:active?"height 0.1s":"height 0.4s"}}/>;})}</div>);}
-function TemplatePicker({soapKey,onInsert,dbTemplates}){const[open,setOpen]=useState(false);const hardcoded=TEMPLATES[soapKey]||[];const dbItems=(dbTemplates||[]).map(t=>t[soapKey]).filter(Boolean);const all=[...dbItems,...hardcoded.filter(h=>!dbItems.includes(h))];if(all.length===0)return null;return(<div style={{position:"relative"}}><button onClick={()=>setOpen(!open)} style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:6,padding:"2px 6px",fontSize:9,color:"#64748b",cursor:"pointer",display:"flex",alignItems:"center",gap:2}}><ChevronDown size={10}/>定型文</button>{open&&<div style={{position:"absolute",top:24,right:0,background:"#fff",border:"1px solid #e2e8f0",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,.1)",zIndex:20,minWidth:200,maxHeight:200,overflow:"auto",padding:4}}>{all.map((t,i)=><div key={i} onClick={()=>{onInsert(t);setOpen(false);}} style={{padding:"6px 10px",fontSize:11,color:"#334155",cursor:"pointer",borderRadius:4,whiteSpace:"pre-wrap",lineHeight:1.5}} onMouseEnter={e=>e.target.style.background="#f0fdfa"} onMouseLeave={e=>e.target.style.background="transparent"}>{t.length>60?t.slice(0,60)+"…":t}</div>)}</div>}</div>);}
+function TemplatePicker({soapKey,onInsert,dbTemplates}){const[open,setOpen]=useState(false);const hardcoded=TEMPLATES[soapKey]||[];const dbItems=(dbTemplates||[]).filter(t=>t.soap_field===soapKey).map(t=>t.template_text);const all=[...dbItems,...hardcoded.filter(h=>!dbItems.includes(h))];if(all.length===0)return null;return(<div style={{position:"relative"}}><button onClick={()=>setOpen(!open)} style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:6,padding:"2px 6px",fontSize:9,color:"#64748b",cursor:"pointer",display:"flex",alignItems:"center",gap:2}}><ChevronDown size={10}/>定型文</button>{open&&<div style={{position:"absolute",top:24,right:0,background:"#fff",border:"1px solid #e2e8f0",borderRadius:8,boxShadow:"0 4px 12px rgba(0,0,0,.1)",zIndex:20,minWidth:200,maxHeight:200,overflow:"auto",padding:4}}>{all.map((t,i)=><div key={i} onClick={()=>{onInsert(t);setOpen(false);}} style={{padding:"6px 10px",fontSize:11,color:"#334155",cursor:"pointer",borderRadius:4,whiteSpace:"pre-wrap",lineHeight:1.5}} onMouseEnter={e=>e.target.style.background="#f0fdfa"} onMouseLeave={e=>e.target.style.background="transparent"}>{t.length>60?t.slice(0,60)+"…":t}</div>)}</div>}</div>);}
 function ProcessLog({logs}){if(logs.length===0)return null;return(<div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",marginBottom:12,border:"1px solid #e2e8f0"}}><div style={{fontSize:10,fontWeight:700,color:"#94a3b8",marginBottom:4}}>処理ログ</div>{logs.map((l,i)=><div key={i} style={{fontSize:11,padding:"2px 0",color:l.status==="error"?"#dc2626":l.status==="ok"?"#059669":"#475569"}}><span style={{color:"#94a3b8",marginRight:4}}>{l.time}</span>{l.status==="ok"?"✅":l.status==="error"?"❌":"⏳"} {l.msg}</div>)}</div>);}
 
 // ======================================
@@ -140,115 +115,47 @@ function ProcessLog({logs}){if(logs.length===0)return null;return(<div style={{b
 function RecordDetail({record,onBack,onUpdate,onDelete,initialSoap,storeId,companyId}){
   const[soap,setSoap]=useState(()=>{const b=Object.fromEntries(SOAP_KEYS.map(s=>[s.key,record[s.key]||""]));if(initialSoap){for(const sk of SOAP_KEYS){if(sk.apiKey&&initialSoap[sk.apiKey]&&!b[sk.key])b[sk.key]=initialSoap[sk.apiKey];}}return b;});
   const[saving,setSaving]=useState(false);const[msg,setMsg]=useState("");
-  const[dbTemplates,setDbTemplates]=useState([]);const[checkRules,setCheckRules]=useState([]);
-  const[showTplPicker,setShowTplPicker]=useState(false);const[checkWarnings,setCheckWarnings]=useState([]);
+  const[dbTemplates,setDbTemplates]=useState([]);
 
   useEffect(()=>{const b=Object.fromEntries(SOAP_KEYS.map(s=>[s.key,record[s.key]||""]));if(initialSoap){for(const sk of SOAP_KEYS){if(sk.apiKey&&initialSoap[sk.apiKey]&&!b[sk.key])b[sk.key]=initialSoap[sk.apiKey];}}setSoap(b);},[record.id]);
 
-  // テンプレートとチェックルールをDBから読み込み
+  // テンプレートをDBから読み込み
   useEffect(()=>{(async()=>{
     try{
-      let tq=supabase.from("soap_templates").select("*").eq("is_active",true).order("sort_order");
-      // グローバル + 自社 + 自店のテンプレートを取得
-      const{data:tData}=await tq;
-      const filtered=(tData||[]).filter(t=>
+      const{data}=await supabase.from("soap_templates").select("*").eq("is_active",true).order("sort_order");
+      const filtered=(data||[]).filter(t=>
         (!t.company_id && !t.store_id) ||
         (t.company_id===companyId && !t.store_id) ||
         (t.store_id===storeId)
       );
       setDbTemplates(filtered);
-
-      const{data:rData}=await supabase.from("soap_check_rules").select("*").eq("is_active",true).order("sort_order");
-      const filteredRules=(rData||[]).filter(r=>!r.company_id || r.company_id===companyId);
-      setCheckRules(filteredRules);
-    }catch(e){console.error("Template/Rule load:",e);}
+    }catch(e){console.error("Template load:",e);}
   })();},[storeId,companyId]);
 
-  // 記載チェック実行
-  const runCheck=useCallback(()=>{
-    const warns=[];
-    checkRules.forEach(rule=>{
-      (rule.required_fields||[]).forEach(field=>{
-        const val=(soap[field]||"").trim();
-        const fieldLabel=SOAP_KEYS.find(s=>s.key===field)?.label||field;
-        if(!val)warns.push(`${fieldLabel}が未記入です（${rule.name}）`);
-        else if(rule.min_length>0&&val.length<rule.min_length)warns.push(`${fieldLabel}が${rule.min_length}文字未満です（${rule.name}）`);
-      });
-    });
-    setCheckWarnings(warns);
-    return warns;
-  },[soap,checkRules]);
-
-  // テンプレート一括適用
-  const applyTemplate=(tpl)=>{
-    const newSoap={...soap};
-    SOAP_KEYS.forEach(s=>{
-      if(tpl[s.key]?.trim()){
-        newSoap[s.key]=newSoap[s.key]?newSoap[s.key]+"\n"+tpl[s.key]:tpl[s.key];
-      }
-    });
-    setSoap(newSoap);
-    setShowTplPicker(false);
-    setMsg("✅ テンプレートを適用しました");
-    setTimeout(()=>setMsg(""),2000);
-  };
-
   const handleSaveAndCopy=async()=>{
-    const warns=runCheck();
-    if(warns.length>0&&!confirm(`⚠️ 記載チェック警告:\n\n${warns.join("\n")}\n\nこのまま保存しますか？`))return;
-    setSaving(true);setMsg("");try{await onUpdate(record.id,soap);const mt=buildMusubiText(soap);if(mt){await navigator.clipboard.writeText(mt);setMsg("✅ 保存＋Musubiコピー完了");}else setMsg("✅ 保存しました");}catch(e){setMsg("❌ "+e.message);}setSaving(false);setTimeout(()=>setMsg(""),3000);
+    setSaving(true);setMsg("");
+    try{
+      await onUpdate(record.id,soap);
+      const mt=buildMusubiText(soap);
+      if(mt){await navigator.clipboard.writeText(mt);setMsg("✅ 保存＋Musubiコピー完了");}
+      else setMsg("✅ 保存しました");
+    }catch(e){setMsg("❌ "+e.message);}
+    setSaving(false);setTimeout(()=>setMsg(""),3000);
   };
 
   return(<div>
-    <button onClick={onBack} style={{display:"flex",alignItems:"center",gap:4,background:"none",border:"none",fontSize:13,fontWeight:700,color:"#64748b",cursor:"pointer",padding:"0 0 10px"}}><ArrowLeft size={14}/> 一覧に戻る</button>
-    <div style={{background:"#fff",borderRadius:12,padding:"14px 16px",border:"1px solid #e8ecf0",marginBottom:12}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{fontSize:11,fontWeight:700,color:"#94a3b8"}}>文字起こし — {fmtDate(record.created_at)}</span>{record.patient_name&&<span style={{fontSize:11,fontWeight:700,color:"#0d9488",background:"#ecfdf5",padding:"1px 6px",borderRadius:4}}>{record.patient_name}</span>}{record.expires_at&&(()=>{const d=daysLeft(record.expires_at);return<span style={{fontSize:10,color:d<=1?"#ef4444":d<=3?"#d97706":"#94a3b8"}}>残{d}日</span>;})()}</div>
-      <p style={{margin:0,fontSize:13,color:"#1e293b",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{record.transcript}</p>
-    </div>
-    <div style={{background:"#fff",borderRadius:12,padding:"14px 16px",border:"1px solid #e8ecf0",marginBottom:12}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-        <div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>SOAP入力</div>
-        <div style={{display:"flex",gap:6}}>
-          {dbTemplates.length>0&&(
-            <div style={{position:"relative"}}>
-              <button onClick={()=>setShowTplPicker(!showTplPicker)} style={{background:"linear-gradient(135deg,#6366f1,#4f46e5)",color:"#fff",border:"none",borderRadius:8,padding:"5px 10px",fontSize:10,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
-                <Download size={11}/> テンプレート適用
-              </button>
-              {showTplPicker&&(
-                <div style={{position:"absolute",top:30,right:0,background:"#fff",border:"1px solid #e2e8f0",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,.12)",zIndex:30,minWidth:220,maxHeight:260,overflow:"auto",padding:6}}>
-                  <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",padding:"4px 8px"}}>テンプレートを選択</div>
-                  {dbTemplates.map(tpl=>{
-                    const catColors={general:"#64748b",initial:"#2563eb",followup:"#059669",highrisk:"#dc2626",custom:"#7c3aed"};
-                    const catLabels={general:"一般",initial:"初回",followup:"継続",highrisk:"ハイリスク",custom:"カスタム"};
-                    return(
-                      <div key={tpl.id} onClick={()=>applyTemplate(tpl)} style={{padding:"8px 10px",cursor:"pointer",borderRadius:6,marginBottom:2}} onMouseEnter={e=>e.currentTarget.style.background="#f0fdfa"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                        <div style={{display:"flex",alignItems:"center",gap:6}}>
-                          <span style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{tpl.name}</span>
-                          <span style={{fontSize:9,fontWeight:600,color:catColors[tpl.category]||"#64748b",background:`${catColors[tpl.category]||"#64748b"}15`,padding:"1px 5px",borderRadius:4}}>{catLabels[tpl.category]||tpl.category}</span>
-                        </div>
-                        {tpl.description&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{tpl.description}</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-          {checkRules.length>0&&(
-            <button onClick={runCheck} style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:8,padding:"5px 10px",fontSize:10,fontWeight:700,color:"#64748b",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
-              <Search size={11}/> 記載チェック
-            </button>
-          )}
-        </div>
+    <button onClick={onBack} style={{display:"flex",alignItems:"center",gap:4,background:"none",border:"none",fontSize:12,color:"#64748b",fontWeight:700,cursor:"pointer",marginBottom:12,padding:0}}><ArrowLeft size={14}/> 戻る</button>
+    <div style={{background:"#fff",borderRadius:16,padding:"16px 18px",border:"1px solid #e8ecf0",marginBottom:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+        <span style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>SOAP編集</span>
+        {record.patient_name&&<span style={{fontSize:10,fontWeight:700,color:"#0d9488",background:"#ecfdf5",padding:"1px 6px",borderRadius:4}}>{record.patient_name}</span>}
+        <div style={{flex:1}}/>
+        <span style={{fontSize:10,color:"#94a3b8"}}>{fmtDate(record.created_at)}</span>
       </div>
-      {/* チェック警告 */}
-      {checkWarnings.length>0&&(
-        <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"8px 12px",marginBottom:10}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#d97706",marginBottom:4}}>⚠️ 記載チェック警告</div>
-          {checkWarnings.map((w,i)=><div key={i} style={{fontSize:11,color:"#92400e",padding:"1px 0"}}>{w}</div>)}
-        </div>
-      )}
+      {record.transcript&&<div style={{fontSize:12,color:"#64748b",lineHeight:1.8,marginBottom:12,padding:"8px 10px",background:"#f8fafb",borderRadius:8,maxHeight:100,overflow:"auto"}}>{record.transcript}</div>}
+
       {SOAP_KEYS.map(s=>(<div key={s.key} style={{marginBottom:10}}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}><span style={{fontSize:12,fontWeight:800,color:s.color,width:50}}>{s.label}</span><span style={{fontSize:10,color:"#94a3b8",flex:1}}>{s.full}</span><TemplatePicker soapKey={s.key} onInsert={t=>setSoap(p=>({...p,[s.key]:p[s.key]?p[s.key]+"\n"+t:t}))} dbTemplates={dbTemplates}/></div><textarea value={soap[s.key]} onChange={e=>setSoap(p=>({...p,[s.key]:e.target.value}))} placeholder={`${s.full}...`} rows={2} style={{width:"100%",padding:"8px 10px",border:`1px solid ${s.color}30`,borderRadius:8,fontSize:12,outline:"none",resize:"vertical",fontFamily:"inherit",boxSizing:"border-box",lineHeight:1.7}}/></div>))}
+
       <button onClick={handleSaveAndCopy} disabled={saving} style={{width:"100%",padding:"10px",background:"linear-gradient(135deg,#0d9488,#0f766e)",color:"#fff",border:"none",borderRadius:10,fontSize:14,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>{saving?<Loader2 size={14} style={{animation:"spin 1s linear infinite"}}/>:<><Check size={14}/> 保存＋Musubiコピー</>}</button>
       {msg&&<div style={{marginTop:8,fontSize:12,color:msg.startsWith("✅")?"#059669":"#dc2626",fontWeight:600,textAlign:"center"}}>{msg}</div>}
     </div>
@@ -268,6 +175,7 @@ export default function App(){
   const[records,setRecords]=useState([]);const[selectedRecord,setSelectedRecord]=useState(null);const[loadingRecords,setLoadingRecords]=useState(false);
   const[savedId,setSavedId]=useState(null);const[aiSoap,setAiSoap]=useState(null);const[procLog,setProcLog]=useState([]);const[patientName,setPatientName]=useState("");
   const[userInfo,setUserInfo]=useState(null);const[currentStore,setCurrentStore]=useState(null);const[apiKey,setApiKey]=useState("");
+  const[initError,setInitError]=useState("");
   const[deferredPrompt,setDeferredPrompt]=useState(null);const[showInstall,setShowInstall]=useState(false);
   const recRef=useRef(null);const chunksRef=useRef([]);const timerRef=useRef(null);const streamRef=useRef(null);const analyserRef=useRef(null);const levelRef=useRef(null);const fileRef=useRef(null);
   const addProcLog=(msg,status)=>setProcLog(p=>[...p,{time:ts(),msg,status}]);
@@ -275,14 +183,16 @@ export default function App(){
 
   // Auth
   useEffect(()=>{getSession().then(s=>setSession(s));const{data}=onAuthChange(s=>setSession(s));return()=>data.subscription.unsubscribe();},[]);
-  // ログイン後の初期化: ユーザー種別判定 + 店舗/管理者ルーティング
+
+  // ★ ログイン後の初期化（修正版: エラー時に永久ローディングにならない）
   useEffect(()=>{if(!session?.user)return;(async()=>{
+    setInitError("");
     try{
       const uid=session.user.id;
       const meta=session.user.user_metadata||{};
-      const loginType=meta.type; // 'store' | 'admin' | undefined(旧方式)
+      const loginType=meta.type;
 
-      // 管理者アカウントの場合
+      // 管理者アカウント
       if(loginType==="admin"){
         const{data:adminAcc}=await supabase.from("admin_accounts").select("*").eq("auth_user_id",uid).maybeSingle();
         if(adminAcc){
@@ -292,7 +202,7 @@ export default function App(){
         }
       }
 
-      // 店舗アカウントの場合
+      // 店舗アカウント
       if(loginType==="store"){
         const{data:store}=await supabase.from("stores").select("id,name,name_kana,company_id").eq("auth_user_id",uid).maybeSingle();
         if(store){
@@ -300,27 +210,33 @@ export default function App(){
           setUserInfo({id:uid,email:session.user.email,role:"pharmacist",company_id:store.company_id,display_name:store.name,is_approved:true});
           return;
         }
+        // ★ 店舗が見つからない場合: エラーを表示（永久ローディング防止）
+        setInitError("店舗情報が見つかりません。管理者にお問い合わせください。");
+        setUserInfo({id:uid,email:session.user.email||"",role:"pharmacist",is_approved:true});
+        return;
       }
 
-      // 旧方式（メール認証）のフォールバック
+      // 旧方式フォールバック
       if(session.user.email){
         const info=await getUserInfo(session.user.email);
         if(info){
           setUserInfo(info);
           if(info.role==="super_admin"){setPage("admin");return;}
-          // 店舗復元
-          try{const lastId=localStorage.getItem(STORE_KEY);if(lastId){const{data:s}=await supabase.from("stores").select("id,name,name_kana").eq("id",lastId).single();if(s){setCurrentStore(s);return;}}}catch{}
           if(info.user_stores?.[0]?.stores){setCurrentStore(info.user_stores[0].stores);return;}
         }
       }
+
       // 何も見つからない場合
-      setUserInfo({id:uid,email:session.user.email||"",role:"pharmacist",is_approved:true,_loadError:true});
+      setInitError("アカウント情報の読み込みに失敗しました。");
+      setUserInfo({id:uid,email:session.user.email||"",role:"pharmacist",is_approved:true});
     }catch(e){
       console.error("Init error:",e);
-      setUserInfo({id:session.user.id,email:session.user.email||"",role:"pharmacist",is_approved:true,_loadError:true});
+      setInitError(`初期化エラー: ${e.message}`);
+      setUserInfo({id:session.user.id,email:session.user.email||"",role:"pharmacist",is_approved:true});
     }
   })();},[session]);
-  // API key from DB
+
+  // API key
   useEffect(()=>{if(!currentStore)return;(async()=>{try{const key=await getApiKey("groq",currentStore.id);setApiKey(key);}catch(e){console.error("API key load error:",e);}})();},[currentStore]);
   // Hash routing
   useEffect(()=>{const h=()=>setPage(window.location.hash==="#admin"?"admin":"app");window.addEventListener("hashchange",h);return()=>window.removeEventListener("hashchange",h);},[]);
@@ -334,12 +250,82 @@ export default function App(){
 
   const startLevel=useCallback(stream=>{try{const c=new AudioContext(),s=c.createMediaStreamSource(stream),a=c.createAnalyser();a.fftSize=256;s.connect(a);analyserRef.current={ctx:c,analyser:a};const d=new Uint8Array(a.frequencyBinCount);const t=()=>{a.getByteFrequencyData(d);setAudioLevel(d.reduce((a,b)=>a+b,0)/d.length/255);levelRef.current=requestAnimationFrame(t);};t();}catch(e){}},[]);
   const stopLevel=useCallback(()=>{if(levelRef.current)cancelAnimationFrame(levelRef.current);if(analyserRef.current?.ctx)analyserRef.current.ctx.close().catch(()=>{});setAudioLevel(0);},[]);
-  const loadRecords=useCallback(async()=>{setLoadingRecords(true);try{setRecords(await getRecords(30,currentStore?.id));}catch(e){}setLoadingRecords(false);},[currentStore]);
+  const loadRecords=useCallback(async()=>{setLoadingRecords(true);try{setRecords(await getRecords(30,currentStore?.id));}catch(e){console.error("loadRecords:",e);}setLoadingRecords(false);},[currentStore]);
   useEffect(()=>{if(view==="list"&&currentStore)loadRecords();},[view,loadRecords,currentStore]);
 
-  const processAudio=useCallback(async blob=>{if(!apiKey){setError("APIキーが未設定です。管理者に連絡してください。");return;}setState(ST.PROCESSING);setResult("");setError("");setSavedId(null);setAiSoap(null);setProcLog([]);addProcLog("音声デコード中...","pending");let decoded,dur;try{decoded=await decodeBlob(blob);dur=Math.round(decoded.duration);addProcLog(`デコード完了 (${dur}秒)`,"ok");}catch(e){addProcLog("デコード失敗","error");setError(e.message);setState(ST.IDLE);return;}addProcLog("WAV変換中...","pending");let wav;try{wav=toWav16k(decoded);addProcLog("WAV変換完了","ok");}catch(e){addProcLog("WAV変換失敗","error");setError(e.message);setState(ST.IDLE);return;}setProcessingMsg("文字起こし中...");addProcLog("Groq送信中...","pending");let text;try{text=await transcribeAudio(wav,apiKey);if(!text)throw new Error("空");addProcLog(`文字起こし完了 (${text.length}文字)`,"ok");}catch(e){addProcLog("文字起こし失敗","error");setError(e.message);setState(ST.IDLE);setProcessingMsg("");return;}setResult(text);setProcessingMsg("医薬品名補正中...");try{const drugs=await loadDrugMaster();if(drugs.length>0){const{text:corrected,corrections}=correctDrugNames(text,drugs);if(corrections.length>0){text=corrected;setResult(corrected);addProcLog(`医薬品名補正 ${corrections.length}件`,"ok");}else{addProcLog("医薬品名補正 変更なし","ok");}}else{addProcLog("医薬品マスタ未登録","ok");}}catch(e){addProcLog("医薬品名補正スキップ","ok");}setProcessingMsg("保存中...");let recId;try{const rec=await saveRecord(text,dur,patientName,currentStore?.id,userInfo?.id);recId=rec.id;setSavedId(rec.id);addProcLog("保存完了","ok");logUsage("transcription",currentStore?.id,userInfo?.id,dur);}catch(e){addProcLog("保存失敗","error");}setProcessingMsg("AI SOAP分類中...");try{const accessToken=session?.access_token||"";const soap=await classifySOAP(text,accessToken);if(!soap?.parseError){setAiSoap(soap);addProcLog("SOAP分類完了","ok");logUsage("soap_classify",currentStore?.id,userInfo?.id);if(recId){const sd={};for(const sk of SOAP_KEYS){if(sk.apiKey&&soap[sk.apiKey])sd[sk.key]=soap[sk.apiKey];}if(Object.keys(sd).length>0)try{await updateRecord(recId,sd);}catch{}}}}catch(e){addProcLog("SOAP分類失敗","error");}addProcLog("完了","ok");setState(ST.IDLE);setProcessingMsg("");},[apiKey,patientName,currentStore,userInfo,session]);
+  // ★ processAudio: エラーハンドリング強化
+  const processAudio=useCallback(async blob=>{
+    if(!apiKey){setError("APIキーが未設定です。管理者に連絡してください。\n管理画面 → API設定 でGroqキーを登録してください。");setState(ST.IDLE);return;}
+    setState(ST.PROCESSING);setResult("");setError("");setSavedId(null);setAiSoap(null);setProcLog([]);
 
-  const startRec=useCallback(async()=>{try{setError("");setResult("");setSavedId(null);setAiSoap(null);setProcLog([]);chunksRef.current=[];const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,sampleRate:44100}});streamRef.current=stream;startLevel(stream);const mr=new MediaRecorder(stream,{mimeType:"audio/webm;codecs=opus"});mr.ondataavailable=e=>{if(e.data.size>0)chunksRef.current.push(e.data);};mr.start(500);recRef.current=mr;setState(ST.REC);}catch(e){setError(e.name==="NotAllowedError"?"マイクアクセス拒否":`マイクエラー: ${e.message}`);}},[startLevel]);
+    // 1. デコード
+    addProcLog("音声デコード中...","pending");
+    let decoded,dur;
+    try{decoded=await decodeBlob(blob);dur=Math.round(decoded.duration);addProcLog(`デコード完了 (${dur}秒)`,"ok");}
+    catch(e){addProcLog("デコード失敗: "+e.message,"error");setError("音声デコード失敗: "+e.message);setState(ST.IDLE);return;}
+
+    // 2. WAV変換
+    addProcLog("WAV変換中...","pending");
+    let wav;
+    try{wav=toWav16k(decoded);addProcLog("WAV変換完了","ok");}
+    catch(e){addProcLog("WAV変換失敗","error");setError("WAV変換失敗: "+e.message);setState(ST.IDLE);return;}
+
+    // 3. 文字起こし
+    setProcessingMsg("文字起こし中...");addProcLog("Groq送信中...","pending");
+    let text;
+    try{text=await transcribeAudio(wav,apiKey);if(!text)throw new Error("文字起こし結果が空です");addProcLog(`文字起こし完了 (${text.length}文字)`,"ok");}
+    catch(e){addProcLog("文字起こし失敗: "+e.message,"error");setError("文字起こし失敗: "+e.message);setState(ST.IDLE);setProcessingMsg("");return;}
+    setResult(text);
+
+    // 4. 医薬品名補正
+    setProcessingMsg("医薬品名補正中...");
+    try{
+      const drugs=await loadDrugMaster();
+      if(drugs.length>0){const{text:corrected,corrections}=correctDrugNames(text,drugs);if(corrections.length>0){text=corrected;setResult(corrected);addProcLog(`医薬品名補正 ${corrections.length}件`,"ok");}else{addProcLog("医薬品名補正 変更なし","ok");}}
+      else{addProcLog("医薬品マスタ未登録（スキップ）","ok");}
+    }catch(e){addProcLog("医薬品名補正スキップ","ok");}
+
+    // 5. 保存 ★ エラーを明示的に表示
+    setProcessingMsg("保存中...");
+    let recId;
+    try{
+      const rec=await saveRecord(text,dur,patientName,currentStore?.id,userInfo?.id);
+      recId=rec.id;setSavedId(rec.id);addProcLog("保存完了","ok");
+      logUsage("transcription",currentStore?.id,userInfo?.id,dur);
+    }catch(e){
+      addProcLog("保存失敗: "+e.message,"error");
+      setError(prev=>prev?prev+"\n⚠️ 保存失敗: "+e.message:"⚠️ 保存失敗: "+e.message);
+    }
+
+    // 6. AI SOAP分類
+    setProcessingMsg("AI SOAP分類中...");
+    try{
+      const accessToken=session?.access_token||"";
+      const soap=await classifySOAP(text,accessToken);
+      if(soap&&!soap.parseError){
+        setAiSoap(soap);addProcLog("SOAP分類完了","ok");
+        logUsage("soap_classify",currentStore?.id,userInfo?.id);
+        // 保存済みレコードにSOAPを書き込み
+        if(recId){
+          const sd={};for(const sk of SOAP_KEYS){if(sk.apiKey&&soap[sk.apiKey])sd[sk.key]=soap[sk.apiKey];}
+          if(Object.keys(sd).length>0){try{await updateRecord(recId,sd);addProcLog("SOAP保存完了","ok");}catch(e){addProcLog("SOAP保存失敗: "+e.message,"error");}}
+        }
+      }else{addProcLog("SOAP分類: パースエラー","error");}
+    }catch(e){addProcLog("SOAP分類失敗: "+e.message,"error");}
+
+    addProcLog("完了","ok");setState(ST.IDLE);setProcessingMsg("");
+  },[apiKey,patientName,currentStore,userInfo,session]);
+
+  const startRec=useCallback(async()=>{
+    try{setError("");setResult("");setSavedId(null);setAiSoap(null);setProcLog([]);chunksRef.current=[];
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,sampleRate:44100}});
+    streamRef.current=stream;startLevel(stream);
+    const mr=new MediaRecorder(stream,{mimeType:"audio/webm;codecs=opus"});
+    mr.ondataavailable=e=>{if(e.data.size>0)chunksRef.current.push(e.data);};
+    mr.start(500);recRef.current=mr;setState(ST.REC);}
+    catch(e){setError(e.name==="NotAllowedError"?"マイクアクセスが拒否されました。ブラウザの設定からマイクを許可してください。":`マイクエラー: ${e.message}`);}
+  },[startLevel]);
+
   const stopRec=useCallback(async()=>{if(!recRef.current)return;recRef.current.stop();streamRef.current?.getTracks().forEach(t=>t.stop());stopLevel();await new Promise(r=>{recRef.current.onstop=r;});await processAudio(new Blob(chunksRef.current,{type:"audio/webm"}));},[processAudio,stopLevel]);
   const handleFile=useCallback(async f=>{if(!f)return;if(!f.type.startsWith("audio/")&&!f.type.startsWith("video/")){setError(`非対応: ${f.type}`);return;}await processAudio(f);},[processAudio]);
   const reset=()=>{setResult("");setError("");setSavedId(null);setAiSoap(null);setProcLog([]);setElapsed(0);setView("mic");};
@@ -347,30 +333,40 @@ export default function App(){
   const handleDeleteRecord=async id=>{await deleteRecord(id);setRecords(p=>p.filter(r=>r.id!==id));setSelectedRecord(null);setView("list");};
   const isRec=state===ST.REC;const isBusy=state===ST.PROCESSING;const hasResult=result||error;
 
+  const doLogout=async()=>{await signOut().catch(()=>{});setSession(null);setUserInfo(null);setCurrentStore(null);setInitError("");};
+
   // ルーティング
   if(session===undefined)return<div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><Loader2 size={28} style={{animation:"spin 1s linear infinite",color:"#0d9488"}}/><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
   if(!session)return<LoginScreen onLogin={()=>{}}/>;
   if(page==="admin"){
     const isAdminAccount = userInfo?.role === "super_admin" || session?.user?.user_metadata?.type === "admin";
-    return<Admin session={session} onBack={isAdminAccount ? async()=>{await signOut();setUserInfo(null);setCurrentStore(null);setPage("app");} : ()=>{window.location.hash="";setPage("app");}}/>;
+    return<Admin session={session} onBack={isAdminAccount ? async()=>{await doLogout();setPage("app");} : ()=>{window.location.hash="";setPage("app");}}/>;
   }
-  if(!userInfo||!currentStore)return<div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}><Loader2 size={28} style={{animation:"spin 1s linear infinite",color:"#0d9488"}}/><div style={{fontSize:12,color:"#94a3b8",fontFamily:"sans-serif"}}>読み込み中...</div><button onClick={async()=>{await signOut();setSession(null);setUserInfo(null);setCurrentStore(null);}} style={{marginTop:16,padding:"8px 20px",background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer"}}>ログアウト</button><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
+
+  // ★ 修正: 永久ローディング防止。エラーがあればメッセージ表示+ログアウトボタン
+  if(!userInfo)return<div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,fontFamily:"sans-serif"}}><Loader2 size={28} style={{animation:"spin 1s linear infinite",color:"#0d9488"}}/><div style={{fontSize:12,color:"#94a3b8"}}>読み込み中...</div><button onClick={doLogout} style={{marginTop:16,padding:"8px 20px",background:"#f1f5f9",color:"#64748b",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer"}}>ログアウト</button><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
+  if(!currentStore)return<div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12,fontFamily:"'Noto Sans JP',sans-serif",padding:20}}>
+    <AlertTriangle size={36} color="#d97706"/>
+    <div style={{fontSize:16,fontWeight:800,color:"#0f172a"}}>店舗情報が見つかりません</div>
+    <div style={{fontSize:12,color:"#64748b",textAlign:"center",lineHeight:1.8,maxWidth:300}}>
+      {initError||"店舗の紐付けが完了していません。管理者に連絡して、店舗アカウントの設定を確認してください。"}
+    </div>
+    <button onClick={doLogout} style={{marginTop:16,padding:"10px 28px",background:"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer"}}>ログアウト</button>
+  </div>;
 
   // ======================================
   // メイン画面
   // ======================================
   return(<div style={{minHeight:"100vh",background:"linear-gradient(168deg,#f0fdfa 0%,#f0f9ff 40%,#fafbfc 100%)",fontFamily:"'Noto Sans JP','Hiragino Sans',sans-serif"}}>
-    {/* ヘッダー */}
     <header style={{background:"#fff",borderBottom:"1px solid #e2e8f0",padding:"0 16px",position:"sticky",top:0,zIndex:50,boxShadow:"0 1px 4px rgba(0,0,0,.03)"}}>
       <div style={{maxWidth:680,margin:"0 auto",display:"flex",alignItems:"center",height:46}}>
         <div style={{width:28,height:28,borderRadius:8,background:"linear-gradient(135deg,#0d9488,#0f766e)",display:"flex",alignItems:"center",justifyContent:"center",marginRight:8}}><Mic size={14} color="#fff"/></div>
         <div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>音声薬歴</div>
         <div style={{flex:1}}/>
         {isAdmin&&<button onClick={()=>{window.location.hash="#admin";setPage("admin");}} style={{background:"linear-gradient(135deg,#6366f1,#4f46e5)",border:"none",borderRadius:8,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",marginLeft:4}} title="管理画面"><Shield size={14} color="#fff"/></button>}
-        <button onClick={async()=>{await signOut();setUserInfo(null);setCurrentStore(null);}} style={{background:"#fef2f2",border:"none",borderRadius:8,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",marginLeft:4}} title="ログアウト"><LogOut size={14} color="#ef4444"/></button>
+        <button onClick={doLogout} style={{background:"#fef2f2",border:"none",borderRadius:8,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",marginLeft:4}} title="ログアウト"><LogOut size={14} color="#ef4444"/></button>
       </div>
     </header>
-    {/* 店舗バー */}
     <div style={{background:"linear-gradient(135deg,#f0fdfa,#ecfeff)",borderBottom:"1px solid #ccfbf1",padding:"8px 16px"}}>
       <div style={{maxWidth:680,margin:"0 auto",display:"flex",alignItems:"center",gap:8}}>
         <Building2 size={16} color="#0d9488"/>
@@ -381,26 +377,27 @@ export default function App(){
     <main style={{maxWidth:680,margin:"0 auto",padding:"16px 14px 80px"}}>
       <style>{`@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
-      {/* PWA Install Banner */}
       {showInstall&&<div style={{background:"linear-gradient(135deg,#6366f1,#4f46e5)",borderRadius:12,padding:"12px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}><Download size={18} color="#fff"/><div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,color:"#fff"}}>ホーム画面に追加</div><div style={{fontSize:10,color:"#c7d2fe"}}>アプリとしてすぐ起動できます</div></div><button onClick={handleInstall} style={{background:"#fff",color:"#4f46e5",border:"none",borderRadius:8,padding:"6px 14px",fontSize:11,fontWeight:700,cursor:"pointer"}}>追加</button><button onClick={()=>setShowInstall(false)} style={{background:"none",border:"none",cursor:"pointer"}}><X size={16} color="#c7d2fe"/></button></div>}
 
-      {/* ★ 3タブ: マイク録音 / 履歴 / ファイル読込 */}
+      {/* APIキー未設定警告 */}
+      {!apiKey&&!isBusy&&view==="mic"&&<div style={{background:"#fef3c7",border:"1px solid #fde68a",borderRadius:12,padding:"12px 16px",marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}><AlertTriangle size={14} color="#d97706"/><span style={{fontSize:12,fontWeight:700,color:"#92400e"}}>APIキー未設定</span></div>
+        <div style={{fontSize:11,color:"#78350f",lineHeight:1.6}}>管理画面 → API設定 で Groq APIキーを登録してください。録音はできますが、文字起こしは動作しません。</div>
+      </div>}
+
+      {/* 3タブ */}
       {view!=="detail"&&<div style={{display:"flex",gap:4,marginBottom:14,background:"#f1f5f9",borderRadius:12,padding:4}}>
         {[{id:"mic",label:"マイク録音",icon:<Mic size={14}/>},{id:"list",label:"履歴",icon:<List size={14}/>},{id:"file",label:"ファイル読込",icon:<Upload size={14}/>}].map(m=>
           <button key={m.id} onClick={()=>{if(!isBusy&&!isRec)setView(m.id);}} disabled={isBusy||isRec} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:5,padding:"9px 0",borderRadius:10,border:"none",fontSize:12,fontWeight:700,cursor:isBusy||isRec?"not-allowed":"pointer",background:view===m.id?"#fff":"transparent",color:view===m.id?"#0f172a":"#94a3b8",boxShadow:view===m.id?"0 1px 3px rgba(0,0,0,.06)":"none",transition:"all 0.15s"}}>{m.icon}{m.label}</button>
         )}
       </div>}
 
-      {/* ===== マイク録音タブ ===== */}
+      {/* マイク録音タブ */}
       {view==="mic"&&(<>
         <div style={{background:"#fff",borderRadius:16,padding:"20px 18px",boxShadow:"0 1px 10px rgba(0,0,0,.04)",border:"1px solid #e8ecf0",marginBottom:14}}>
-          {/* 患者名入力（録音ボタンのすぐ上） */}
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"8px 10px",background:"#f8fafb",borderRadius:10,border:"1px solid #e8ecf0"}}><User size={15} color="#0d9488"/><input value={patientName} onChange={e=>setPatientName(e.target.value)} placeholder="患者名（ひらがな）" style={{flex:1,border:"none",outline:"none",fontSize:13,fontWeight:600,color:"#0f172a",background:"transparent"}}/>{patientName&&<button onClick={()=>setPatientName("")} style={{background:"#e2e8f0",border:"none",borderRadius:6,width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><X size={10} color="#64748b"/></button>}</div>
-          {/* ステータス */}
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}><div style={{width:9,height:9,borderRadius:"50%",background:isRec?"#ef4444":isBusy?"#d97706":result?"#059669":"#94a3b8",animation:isRec?"pulse 1.2s ease-in-out infinite":"none"}}/><span style={{fontSize:13,fontWeight:700,color:"#475569"}}>{isRec?`録音中 — ${fmtT(elapsed)}`:isBusy?processingMsg:result?"変換完了":"マイクで録音"}</span><div style={{flex:1}}/>{hasResult&&!isRec&&!isBusy&&<button onClick={reset} style={{background:"#f1f5f9",border:"none",borderRadius:8,padding:"4px 10px",fontSize:10,color:"#64748b",fontWeight:700,cursor:"pointer"}}><RotateCcw size={10}/> リセット</button>}</div>
-          {/* 波形 */}
           <div style={{background:isRec?"#fef2f2":"#f8fafb",borderRadius:12,padding:"12px 14px",marginBottom:14,border:isRec?"1px solid #fecaca":"1px solid #e8ecf0"}}><Wave active={isRec} level={audioLevel}/></div>
-          {/* 録音ボタン */}
           <div style={{display:"flex",justifyContent:"center"}}>{!isRec?<button onClick={startRec} disabled={isBusy} style={{background:isBusy?"#94a3b8":"linear-gradient(135deg,#0d9488,#0f766e)",color:"#fff",border:"none",borderRadius:14,padding:"12px 34px",fontSize:15,fontWeight:800,cursor:isBusy?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8,boxShadow:isBusy?"none":"0 4px 16px rgba(13,148,136,.3)"}}>{isBusy?<><Loader2 size={17} style={{animation:"spin 1s linear infinite"}}/> {processingMsg}</>:<><Mic size={17}/> 録音開始</>}</button>:<button onClick={stopRec} style={{background:"linear-gradient(135deg,#ef4444,#dc2626)",color:"#fff",border:"none",borderRadius:14,padding:"12px 34px",fontSize:15,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:8,boxShadow:"0 4px 16px rgba(239,68,68,.3)"}}><Square size={14} fill="#fff"/> 録音停止</button>}</div>
         </div>
         {error&&!isBusy&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:12,padding:"12px 16px",marginBottom:14}}><p style={{fontSize:12,color:"#991b1b",margin:0,whiteSpace:"pre-wrap"}}>{error}</p></div>}
@@ -413,13 +410,21 @@ export default function App(){
         </div>)}
       </>)}
 
-      {/* ===== ファイル読込タブ ===== */}
+      {/* ファイル読込タブ */}
       {view==="file"&&(<div style={{background:"#fff",borderRadius:16,padding:"20px 18px",border:"1px solid #e8ecf0",marginBottom:14}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"8px 10px",background:"#f8fafb",borderRadius:10,border:"1px solid #e8ecf0"}}><User size={15} color="#0d9488"/><input value={patientName} onChange={e=>setPatientName(e.target.value)} placeholder="患者名（ひらがな）" style={{flex:1,border:"none",outline:"none",fontSize:13,fontWeight:600,color:"#0f172a",background:"transparent"}}/>{patientName&&<button onClick={()=>setPatientName("")} style={{background:"#e2e8f0",border:"none",borderRadius:6,width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><X size={10} color="#64748b"/></button>}</div>
         {!isBusy&&!hasResult?<div onDrop={e=>{e.preventDefault();handleFile(e.dataTransfer.files?.[0]);}} onDragOver={e=>e.preventDefault()} onClick={()=>fileRef.current?.click()} style={{border:"2px dashed #d1d5db",borderRadius:14,padding:"32px 20px",textAlign:"center",cursor:"pointer"}}><input ref={fileRef} type="file" accept={ACCEPT} onChange={e=>{handleFile(e.target.files?.[0]);e.target.value="";}} style={{display:"none"}}/><FileAudio size={28} color="#94a3b8" style={{marginBottom:8}}/><div style={{fontSize:14,fontWeight:700,color:"#475569"}}>音声ファイルを選択</div></div>:isBusy?<div style={{textAlign:"center",padding:"30px 0"}}><Loader2 size={28} style={{animation:"spin 1s linear infinite",color:"#0d9488"}}/><div style={{fontSize:13,color:"#475569",fontWeight:600,marginTop:10}}>{processingMsg}</div></div>:null}
+        {error&&!isBusy&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:12,padding:"12px 16px",marginTop:14}}><p style={{fontSize:12,color:"#991b1b",margin:0,whiteSpace:"pre-wrap"}}>{error}</p></div>}
+        <ProcessLog logs={procLog}/>
+        {result&&(<div style={{background:"#fff",borderRadius:12,padding:"16px 18px",border:"2px solid #99f6e4",marginTop:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>✓ 変換結果</span>{savedId&&<span style={{fontSize:9,color:"#059669",fontWeight:600}}>💾 保存済</span>}</div>
+          <p style={{margin:0,fontSize:14,color:"#1e293b",lineHeight:2,whiteSpace:"pre-wrap"}}>{result}</p>
+          {aiSoap&&!aiSoap.parseError&&(<div style={{marginTop:12,background:"#f0f9ff",borderRadius:10,padding:"12px 14px",border:"1px solid #bae6fd"}}><div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}><Sparkles size={14} color="#2563eb"/><span style={{fontSize:12,fontWeight:800,color:"#1e40af"}}>AI SOAP自動分類</span></div>{SOAP_KEYS.filter(sk=>sk.apiKey&&aiSoap[sk.apiKey]).map(sk=><div key={sk.key} style={{marginBottom:4}}><span style={{fontSize:11,fontWeight:800,color:sk.color}}>{sk.label}: </span><span style={{fontSize:12,color:"#334155"}}>{aiSoap[sk.apiKey]}</span></div>)}</div>)}
+          {savedId&&<button onClick={async()=>{const rs=await getRecords(30,currentStore?.id);setRecords(rs);const r=rs.find(x=>x.id===savedId);if(r){setSelectedRecord(r);setView("detail");}}} style={{marginTop:10,width:"100%",padding:"9px",background:"linear-gradient(135deg,#6366f1,#4f46e5)",color:"#fff",border:"none",borderRadius:10,fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>SOAP確認・編集 → Musubiコピー</button>}
+        </div>)}
       </div>)}
 
-      {/* ===== 履歴タブ ===== */}
+      {/* 履歴タブ */}
       {view==="list"&&(<div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>薬歴履歴</div><button onClick={loadRecords} disabled={loadingRecords} style={{background:"#f1f5f9",border:"none",borderRadius:8,padding:"4px 10px",fontSize:10,color:"#64748b",fontWeight:700,cursor:"pointer"}}>{loadingRecords?"読込中...":"更新"}</button></div>
         <div style={{background:"#fef3c7",borderRadius:8,padding:"6px 10px",marginBottom:10,border:"1px solid #fde68a"}}><span style={{fontSize:10,color:"#92400e"}}>🕐 記録は7日後に自動削除</span></div>
@@ -437,7 +442,7 @@ export default function App(){
         </div>))}
       </div>)}
 
-      {/* ===== レコード詳細 ===== */}
+      {/* レコード詳細 */}
       {view==="detail"&&selectedRecord&&<RecordDetail record={selectedRecord} onBack={()=>{setView("list");setAiSoap(null);}} onUpdate={handleUpdateRecord} onDelete={handleDeleteRecord} initialSoap={aiSoap} storeId={currentStore?.id} companyId={userInfo?.company_id}/>}
     </main>
   </div>);
